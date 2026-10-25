@@ -42,8 +42,20 @@ pub(crate) fn traffic_tick(
         });
         t.tick(dt, player.map(|p| player_outline(p)));
         let t0 = Instant::now();
-        world.set_switches(scenery, &t.switch_requests());
-        world.set_signals(scenery, &t.signal_aspects(&world.signal_routes, player_rail));
+        // the signals first: the switches that a clear signal locks read them
+        let aspects = t.signal_aspects(&world.signal_routes, player_rail);
+        if !t.switch_board.configured {
+            t.switch_board.configure(switch_rules(&world.transit));
+        }
+        let requests = t.switch_requests();
+        let requests = if world.transit.switches.list.is_empty() {
+            requests
+        } else {
+            let occupied = t.rail_occupied_pieces();
+            t.switch_board.decide(dt, &requests, &occupied, &aspects)
+        };
+        world.set_switches(scenery, &requests);
+        world.set_signals(scenery, &aspects);
         return t0.elapsed().as_secs_f64();
     }
     0.0
@@ -121,8 +133,8 @@ pub(crate) fn set_keep_clear(t: &mut traffic::Traffic, player: Option<&Player>, 
     );
 }
 
-/// The timetable puts out its departures: at the start the trips that left within the last
-/// 20 minutes (`first`), then those of the next moments.
+/// The timetable puts out its departures: at the start (`first`) every trip still under way
+/// and those that left within the last 20 minutes, then those of the next moments.
 pub(crate) fn schedule_tick(
     s: &mut schedule::Schedule,
     world: &World,
@@ -340,6 +352,7 @@ pub(crate) fn duty_step(
     game_clock: Option<&omsi_sim::SimClock>,
     learn_loaded: bool,
     plugin_events: Option<&mut Vec<omsi_plugin::GameEvent>>,
+    announce: bool,
 ) {
     if let Some(stop) = p.html_next_stop.take() {
         if d.skip_to(stop) {
@@ -352,6 +365,14 @@ pub(crate) fn duty_step(
     }
     let due = (d.trip_index, d.next_stop);
     let served = d.update(&mut p.vehicle, time);
+    // (the depot file's second recording of each stop, for the maps that keep two: a stock
+    // IBIS steps on by itself only when a stop is left - see `auto_announce`)
+    if announce {
+        // (seconds of play, not the time of day: a night line runs past midnight, and a
+        // clock that wraps would hold every press back until the same time the next day)
+        let run = game_clock.unwrap_or(&p.vehicle.host.clock).run_time;
+        p.announce.step(d, &mut p.vehicle, run);
+    }
     // (also one ended between frames: the last stop skipped from the menu; a trip reopened
     // by a page counts from its start again, and its next end is told too)
     if let Some(run) = d.take_reopened() {
@@ -500,6 +521,7 @@ pub(crate) fn dress_lighting(
     settings: &crate::settings::Settings,
 ) {
     lighting.inside = inside.and_then(|v| v.ty.def.bounding_box.map(|bb| (v.position, v.heading, bb)));
+    lighting.inside_rotation = inside.filter(|v| v.ty.def.bounding_box.is_some()).map(|v| v.body_rotation());
     let puddle_surface = lighting.inside.and_then(|(o, _, _)| world.and_then(|w| w.puddle_surface(o)));
     lighting.puddle_ground = puddle_surface.map(|(h, _)| h);
     lighting.puddle_normal = puddle_surface.map_or(glam::Vec3::Z, |(_, n)| n);
@@ -545,4 +567,28 @@ pub(crate) fn push_mirror_hud(
     let start = scene.overlays.len();
     hud.push(scene, world, viewport[2], viewport[3], cursor);
     scene.shift_overlays(start, viewport[0]);
+}
+
+/// The switches `switches.cfg` configures, as the traffic's board has them: their rest position,
+/// how they are operated and the signal object that locks them.
+fn switch_rules(transit: &omsi_transit::TransitData) -> Vec<omsi_sim::ai_traffic::blocks::SwitchRule> {
+    use omsi_sim::ai_traffic::blocks::{SwitchDrive, SwitchRule};
+    transit
+        .switches
+        .list
+        .iter()
+        .filter_map(|w| {
+            let object = w.object?;
+            Some(SwitchRule {
+                object,
+                default_path: w.default_path(),
+                drive: match w.drive {
+                    omsi_transit::infra::Drive::Auto => SwitchDrive::Auto,
+                    omsi_transit::infra::Drive::Manual => SwitchDrive::Manual,
+                    omsi_transit::infra::Drive::Interlocked => SwitchDrive::Interlocked,
+                },
+                locked_by: w.locked_by.as_deref().and_then(|s| transit.signals.signals.iter().find(|x| x.id.eq_ignore_ascii_case(s))).and_then(|s| s.object),
+            })
+        })
+        .collect()
 }

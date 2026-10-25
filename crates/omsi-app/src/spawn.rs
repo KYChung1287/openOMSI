@@ -244,6 +244,13 @@ pub(crate) fn spawn_player_prepared(
         world.accept_placement_prefetch(staged);
     }
     let vt = prepared.ty;
+    if let omsi_cfg::transport::Admission::Refused(why) = omsi_sim::transport::admission(world.global.transport, &vt.def) {
+        if omsi_cfg::flags::OMSI_IGNORE_TRANSPORT.is_set() {
+            log::warn!("transport: {why} (OMSI_IGNORE_TRANSPORT is set, running anyway)");
+        } else {
+            anyhow::bail!("{} {} cannot run on this map. {why}", vt.def.manufacturer, vt.def.type_name);
+        }
+    }
     log::info!(
         "vehicle {} {}: {} meshes, {} script blocks, {} variables",
         vt.def.manufacturer,
@@ -345,9 +352,14 @@ pub(crate) fn spawn_player_prepared(
     // and the terrain where it is not cut away under them (the streamer keeps both maps to
     // the loaded tiles, and the bus is one of its centres)
     vehicle.contact = Some(std::sync::Arc::new(scene::LiveGround(world.data.clone())));
-    let objects = crate::settings::Settings::load().collision_objects;
+    let loaded = crate::settings::Settings::load();
+    // (the road model of new bodies: the setting, or `OMSI_REALISTIC_ROAD=1`)
+    omsi_sim::rigid::set_realistic_default(loaded.realistic_road_physics);
+    let objects = loaded.collision_objects;
     vehicle.collision = objects.then(|| world.data.peek().lists.collision.clone());
     vehicle.wheel_walls = objects;
+    let wires = if vehicle.trolley.is_some() { crate::trolley_net::load(args, world) } else { None };
+    vehicle.attach_wires(wires.clone());
     // a rail vehicle rides the track (its position comes from the rails, not the tyres)
     let rail_bound = crate::rail_drive::is_rail(&vt.def);
     if rail_bound {
@@ -373,6 +385,14 @@ pub(crate) fn spawn_player_prepared(
         .map(|k| k.with_game_defaults().vehicles)
         .unwrap_or_default();
     let mut p = new_player(vehicle, render, trailer_renders, bindings, rail_bound, &vt);
+    if let Some(net) = wires {
+        p.trolley_view = Some(Box::new(omsi_scene::trolley_view::TrolleyView::new(renderer, scene, net)));
+        if omsi_cfg::flags::OMSI_TROLLEY_UP.is_set() {
+            if let Some(g) = p.vehicle.trolley.as_deref_mut() {
+                g.auto_raise_for = 8.0;
+            }
+        }
+    }
     for _ in 0..3 {
         p.vehicle.update(1.0 / 30.0);
     }
@@ -450,6 +470,9 @@ pub(crate) fn spawn_player_prepared(
     }
     p.vehicle.host.fired_triggers.clear();
     p.vehicle.host.fired_trigger_vars.clear();
+    if args.pending_cabin_temperature.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        p.vehicle.set_cabin_temperature(22.0);
+    }
     Ok(Some(p))
 }
 
@@ -633,11 +656,16 @@ fn new_player(vehicle: omsi_sim::VehicleInstance, render: scene::VehicleRender, 
         blind_pick: None,
         ibis_typist: None,
         duty_typed: false,
+        ibis_holds: Default::default(),
         html_next_stop: None,
         ibis_background: false,
         arm: Default::default(),
         blinker_key_state: 0,
         blinker_cancel: crate::settings::Settings::load().blinker_cancel,
+        trolley_view: None,
+        panto_fx: Default::default(),
+        trolley_sound: Default::default(),
+        announce: crate::auto_announce::AutoAnnounce::new(),
     }
 }
 

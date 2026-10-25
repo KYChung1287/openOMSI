@@ -103,6 +103,11 @@ struct SettingsPage: View {
             PresetRow(mode: mode)
             OptimiseBlock()
             SettingSelect(label: "Anti-aliasing", key: "msaa", options: Choices.msaa, heavy: { $0 == "8" && !traced })
+            SettingSelect(label: "Upscaling", key: "upscaler", options: [("default", "Standard (Catmull-Rom)"), ("fsr1", "AMD FSR 1 (experimental)")])
+            if store.setting("upscaler")?.string == "fsr1" {
+                SettingSelect(label: "FSR quality", key: "fsr_quality", options: [("ultra", "Ultra Quality (77%)"), ("quality", "Quality (67%)"), ("balanced", "Balanced (59%)"), ("performance", "Performance (50%)"), ("auto", "Automatic (keeps the frame rate)"), ("custom", "Use render scale")])
+                SettingSlider(label: "FSR sharpness", key: "fsr_sharpness", range: 0 ... 1, step: 0.05, fallback: 0.8) { "\(Int($0 * 100))%" }
+            }
             SettingSelect(label: "Render scale", key: "render_scale", options: Choices.renderScale)
             SettingSelect(label: "Anisotropic", key: "anisotropy", options: [("1", "Off"), ("2", "2x"), ("4", "4x"), ("8", "8x"), ("16", "16x")])
             if !classic {
@@ -126,6 +131,9 @@ struct SettingsPage: View {
                 SettingSelect(label: "Cloud quality", key: "cloud_quality", options: Choices.cloudQuality)
             }
             SettingSelect(label: "Rain quality", key: "rain_quality", options: Choices.rainQuality)
+            if mode == "enhanced" {
+                SettingSelect(label: "Street light", key: "street_light", options: [("auto", "Auto"), ("on", "On"), ("off", "Off")])
+            }
             SettingSelect(label: "Vehicle smoke", key: "vehicle_smoke", options: [("all", "All vehicles"), ("player", "Player only"), ("off", "Off")], help: "Controls the vehicles' smoke particles, not scenery effects or glowing particles.")
             if (store.setting("reflections")?.double ?? 1) > 0.005 {
                 SettingSelect(label: "Puddles", key: "puddles", options: [("high", "High"), ("low", "Low"), ("off", "Off")])
@@ -393,7 +401,7 @@ struct SettingsPage: View {
                 SettingToggle(label: "Translate the remaining texts automatically (offline, downloads 620 MB once)", key: "machine_translation")
                 SettingToggle(label: "The launcher rests while a game runs (gives the graphics card to the game)", key: "launcher_rest", fallback: true)
                 SettingToggle(label: "Discord Rich Presence", key: "discord_status", fallback: true, help: "Shows the launcher or your map, bus, line and multiplayer status in Discord.")
-                SettingToggle(label: "Voice chat through GreenTeaSpeak (multiplayer)", key: "voice_chat", fallback: true, help: "Players near you are heard from where they stand, when GreenTeaSpeak runs with the openOMSI plugin and the server names a voice server.")
+                SettingToggle(label: "Voice chat in multiplayer", key: "voice_enabled", fallback: false, help: "Hold the nearby (V) or radio (B) key to talk. The microphone is used only while a key is held; nothing is recorded")
             }
             SettingSlider(label: "Game interface size", key: "ui_scale", range: 0.5 ... 2, step: 0.05, fallback: 1, round: 0.01) { pct($0) }
             SettingToggle(label: "Interface grows with the window", key: "ui_scale_window", fallback: true)
@@ -445,7 +453,7 @@ struct SettingsPage: View {
             HStack {
                 Button("Export diagnostics") {
                     if let path = (try? JSONSerialization.jsonObject(with: Bridge.call("act", ["do": "diagnostics"]), options: [.fragmentsAllowed])) as? String {
-                        store.say(String(localized: "Support package saved: \(path)"), error: false)
+                        store.say(tr("Support package saved: {path}", ["path": path]), error: false)
                         Platform.reveal(path)
                     }
                 }

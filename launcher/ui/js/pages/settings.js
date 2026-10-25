@@ -12,7 +12,7 @@ import { UpdateRow, checkUpdates } from '../updates.js';
 import { SETTINGS_TABS, GRAPHICS_PROFILE_KEYS } from './settings-schema.js';
 import { VersionsDialog } from './versions.js';
 import { RadioStations } from './radio-stations.js';
-import { ContentTest } from './content-test.js';
+import { AiListsPage } from './ai-lists.js';
 import { OptimiseBlock } from './optimise.js';
 
 const REPO_URL = 'https://github.com/openOmsi-project/openOMSI';
@@ -56,17 +56,24 @@ export function SettingsPage() {
   const [ask, dialog] = useConfirm();
   if (!s.settings) return null;
   const platform = s.boot?.platform || '';
+  // (the model test runs the game program: not on a phone)
+  const phone = ['android', 'ios'].includes(platform);
   const tabs = SETTINGS_TABS.filter((x) => visible(x, s.settings, platform));
   const current = tabs.find((x) => x.id === tab) || tabs[0];
   const pick = (id) => {
+    // (Troubleshooting is no tab of its own: it opens that page at its model test)
+    if (id === 'troubleshoot') {
+      remember('troubleshoot-tab', 'content');
+      return set({ page: 'troubleshoot' });
+    }
     setTab(id);
     remember('settings-tab', id);
   };
   return html`
     <${PageHead} title="Settings" text="Every change is saved at once; the game reads them when it starts." />
-    <${Tabs} value=${current.id} options=${tabs.map((x) => [x.id, x.label])} onChange=${pick} />
-    ${current.page === 'content'
-      ? html`<div key=${tab}><${ContentTest} /></div>`
+    <${Tabs} value=${current.id} options=${[...tabs.map((x) => [x.id, x.label]), ...(phone ? [] : [['troubleshoot', 'Troubleshooting']])]} onChange=${pick} />
+    ${current.page === 'ailists'
+      ? html`<div key=${tab}><${AiListsPage} /></div>`
       : html`<div class="settings-grid" key=${tab}>
       ${current.cols.map((col) => html`<${Card} title=${col.title}>
         ${col.rows.filter((row) => visible(row, s.settings, platform)).map((row, i) => html`<${Row} key=${i + (row.key || row.id || row.label || row.title || '')} row=${row} ask=${ask} />`)}
@@ -356,7 +363,7 @@ function VersionRow() {
     <div class="row wrap">
       <span class="muted small grow">${t('This is openOMSI {version}', { version: S.boot?.version || '' })}</span>
       ${S.boot?.versions && html`<${Button} small icon="history" label="Choose a version…" onClick=${() => setOpen(true)} />`}
-      <${Button} small kind="ghost" icon="external" onClick=${() => call('open_url', { url: REPO_URL }).catch((e) => toast(e.message, 'error'))}>github.com/openOmsi-project/openOMSI</${Button}>
+      <${Button} small kind="ghost" icon="external" onClick=${() => call('open_url', { url: REPO_URL }).catch((e) => toast(t(e.message), 'error'))}>github.com/openOmsi-project/openOMSI</${Button}>
     </div>
     ${open && html`<${VersionsDialog} onClose=${() => setOpen(false)} />`}
   </div>`;
@@ -378,7 +385,7 @@ function ResetRow({ ask }) {
       await saveSettings({ ...defaults, language: S.settings.language }, true);
       toast(t('Every setting is back to how it came.'), 'ok');
     } catch (e) {
-      toast(e.message, 'error');
+      toast(t(e.message), 'error');
     }
   };
   return html`<div class="setting-row full">
@@ -395,7 +402,7 @@ function SupportRow() {
       const path = await call('support_package');
       toast(t('Support package saved: {path}', { path }), 'ok', 10000);
     } catch (e) {
-      toast(e.message, 'error');
+      toast(t(e.message), 'error');
     }
     setBusy(false);
   };

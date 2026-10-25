@@ -11,7 +11,7 @@ export const CHOICE_DEFAULTS = {
   map: '', entry: -1, line: null, tour: null, free: false,
   time: 9 * 60, start_trip: null, date: '1989-05-30',
   season: 'auto', phase: 'mid', own_date: null,
-  weather: '', traffic: 30, passengers: true, schedule: true, autostart: false, on_foot: false,
+  weather: '', traffic: 30, passengers: true, schedule: true, autostart: false, comfortable_cabin_on_start: false, on_foot: false,
   lan_mode: 'off', lan_addr: '', lan_ws_fallback: null, version: 2,
 };
 
@@ -97,7 +97,7 @@ export const weatherName = (w, list) =>
   : list?.find((x) => x.file === w)?.name || t('Natural weather');
 
 /** A remembered map or bus that is not installed any more gives way to the first one. */
-function fixChoice() {
+export function fixChoice() {
   const c = { ...S.choice };
   let mapChanged = false;
   if (S.maps?.length && !S.maps.some((m) => m.file === c.map)) {
@@ -169,10 +169,28 @@ export function mapName(file) {
   return (file || '').replace(/\\/g, '/').split('/').filter(Boolean).slice(-2, -1)[0] || file;
 }
 
+/** Transport modes (bus, tram, railway, metro, trolleybus). A map that names none takes every
+ * vehicle; otherwise the vehicle must share a mode with it. Mirrors `transport_refusal` of the
+ * launcher core, so the pickers can say why before the game does. */
+export const MODES = ['bus', 'tram', 'railway', 'metro', 'trolleybus'];
+export const modeLabel = (m) => t({ bus: 'Bus', tram: 'Tram', railway: 'Railway', metro: 'Metro', trolleybus: 'Trolleybus' }[m] || m);
+export function transportRefusal(map, vehicle) {
+  const a = map?.transport || [];
+  const b = vehicle?.transport || [];
+  if (!a.length || a.some((m) => b.includes(m))) return null;
+  return t('This map is made for {maps} only; the vehicle counts as {vehicle}.', { maps: a.map(modeLabel).join(', '), vehicle: b.length ? b.map(modeLabel).join(', ') : t('nothing known') });
+}
+/** Modes worth showing as a tag: everything but a plain bus, whose tag would be noise on the
+ * thousands of stock buses. */
+export const shownModes = (x) => (x?.transport || []).filter((m) => m !== 'bus' || (x.transport.length > 1));
+
 export const curMap = () => S.maps?.find((m) => m.file === S.choice?.map);
 export const curBus = () => S.vehicles?.find((v) => v.file === S.choice?.bus);
 export const curLine = () => S.lines.list?.find((l) => l.name === S.choice?.line);
-export const curTour = () => curLine()?.tours.find((x) => x.number === S.choice?.tour);
+// Old saved choices use the displayed number; new choices identify the variant.
+export const tourId = (tour) => tour?.id ?? tour?.number;
+export const resolveTour = (line, selection) => line?.tours.find((x) => tourId(x) === selection) || line?.tours.find((x) => x.number === selection && x.runs) || line?.tours.find((x) => x.number === selection);
+export const curTour = () => resolveTour(curLine(), S.choice?.tour);
 export const realTime = () => !!S.settings?.use_real_time;
 export const realDate = () => !!S.settings?.use_real_date;
 
@@ -260,14 +278,14 @@ export async function loadLines() {
     set({ lines: { key, list, loading: false, error: null } });
     // a line or tour that is not there on this date gives way to the first one
     const line = list.find((l) => l.name === S.choice.line) || list.find((l) => l.user_allowed && l.tours.length) || null;
-    const tour = line?.tours.find((x) => x.number === S.choice.tour) || line?.tours.find((x) => x.runs) || line?.tours[0] || null;
-    if (line?.name !== S.choice.line || tour?.number !== S.choice.tour) choose({ line: line?.name ?? null, tour: tour?.number ?? null });
+    const tour = resolveTour(line, S.choice.tour) || line?.tours.find((x) => x.runs) || line?.tours[0] || null;
+    if (line?.name !== S.choice.line || tourId(tour) !== S.choice.tour) choose({ line: line?.name ?? null, tour: tourId(tour) ?? null });
   } catch (e) {
     if (S.lines.key === key) set({ lines: { key, list: [], loading: false, error: e.message } });
   }
 }
 
-async function updateHof() {
+export async function updateHof() {
   const c = S.choice;
   const hof = await call('default_hof', { map: curMap() || null, bus: curBus() || null, date: c.date, line: c.free ? null : c.line }).catch(() => '');
   set({ hof });
@@ -420,7 +438,7 @@ export async function duty(extra = {}) {
     hof: dutyHof() || null,
     entry: c.entry,
     line: c.free ? null : c.line,
-    tour: c.free ? null : c.tour,
+    tour: c.free ? null : curTour()?.number ?? null,
     trip: trip != null ? String(trip) : null,
     whole_tour: trip != null,
     time: hhmm(c.time),
@@ -430,6 +448,7 @@ export async function duty(extra = {}) {
     passengers: c.passengers,
     schedule: c.schedule,
     autostart: c.autostart,
+    comfortable_cabin_on_start: c.comfortable_cabin_on_start,
     on_foot: c.on_foot,
     profile: S.config?.profile || null,
     lan: c.lan_mode === 'host' ? 'host' : c.lan_mode === 'join' ? `join:${c.lan_addr.trim()}` : 'off',
@@ -453,7 +472,7 @@ export async function start(extra) {
     pollNow();
     return r;
   } catch (e) {
-    toast(e.message, 'error');
+    toast(t(e.message), 'error');
     return null;
   }
 }
@@ -478,7 +497,7 @@ export async function installMod(path) {
     toast(t('Installing {name}…', { name: path.split(/[\\/]/).pop() }));
     pollNow();
   } catch (e) {
-    toast(e.message, 'error');
+    toast(t(e.message), 'error');
   }
 }
 

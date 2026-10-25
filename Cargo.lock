@@ -1114,9 +1114,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
 dependencies = [
  "cmov",
 ]
@@ -3493,8 +3493,11 @@ dependencies = [
  "omsi-srcscan",
  "omsi-texture",
  "omsi-timetable",
+ "omsi-transit",
+ "omsi-trolley",
  "omsi-ui",
  "omsi-vehicle",
+ "omsi-voice",
  "omsi-weather",
  "omsi-world",
  "omsi-xr",
@@ -3676,6 +3679,7 @@ dependencies = [
  "omsi-net",
  "omsi-o3d",
  "omsi-script",
+ "omsi-serverlist",
  "omsi-sim",
  "omsi-texture",
  "omsi-vehicle",
@@ -3700,10 +3704,12 @@ dependencies = [
  "omsi-launcher-core",
  "omsi-net",
  "omsi-platform",
+ "omsi-serverlist",
  "omsi-timetable",
  "omsi-weather",
  "serde",
  "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -3743,6 +3749,7 @@ dependencies = [
  "omsi-map",
  "omsi-net",
  "omsi-sim",
+ "omsi-timetable",
  "omsi-weather",
  "serde",
  "serde_json",
@@ -3788,6 +3795,7 @@ version = "0.1.0"
 dependencies = [
  "ct2rs",
  "log",
+ "omsi-cfg",
  "omsi-ui",
  "parking_lot",
  "serde_json",
@@ -3873,12 +3881,17 @@ dependencies = [
 name = "omsi-plugin"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "libloading 0.9.0",
  "log",
  "mlua",
  "omsi-cfg",
  "oop-format",
+ "serde",
+ "serde_json",
+ "sha2",
  "wasmi",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3944,6 +3957,8 @@ dependencies = [
  "omsi-sim",
  "omsi-soundscape",
  "omsi-texture",
+ "omsi-transit",
+ "omsi-trolley",
  "omsi-ui",
  "omsi-vehicle",
  "omsi-weather",
@@ -3977,6 +3992,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "omsi-serverlist"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "log",
+ "rustrict",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ureq",
+]
+
+[[package]]
 name = "omsi-sim"
 version = "0.1.0"
 dependencies = [
@@ -3996,6 +4025,8 @@ dependencies = [
  "omsi-script",
  "omsi-texture",
  "omsi-timetable",
+ "omsi-transit",
+ "omsi-trolley",
  "omsi-vehicle",
  "omsi-world",
  "parking_lot",
@@ -4046,6 +4077,25 @@ version = "0.1.0"
 dependencies = [
  "log",
  "omsi-cfg",
+ "omsi-transit",
+]
+
+[[package]]
+name = "omsi-transit"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "omsi-cfg",
+]
+
+[[package]]
+name = "omsi-trolley"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
 ]
 
 [[package]]
@@ -4072,6 +4122,22 @@ version = "0.1.0"
 dependencies = [
  "log",
  "omsi-cfg",
+ "omsi-trolley",
+]
+
+[[package]]
+name = "omsi-voice"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "env_logger",
+ "glam",
+ "log",
+ "omsi-audio",
+ "omsi-cfg",
+ "omsi-net",
+ "parking_lot",
+ "unsafe-libopus",
 ]
 
 [[package]]
@@ -4112,6 +4178,7 @@ dependencies = [
  "omsi-cfg",
  "omsi-render",
  "openxr",
+ "pollster 1.0.1",
  "serde",
  "serde_json",
  "wgpu",
@@ -6057,6 +6124,17 @@ dependencies = [
  "unicode-normalization",
  "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "unsafe-libopus"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c757408e7256c910343c7b215c8c8b878948630eecc774baabcca0972376eb73"
+dependencies = [
+ "arrayref",
+ "num-complex",
+ "num-traits",
 ]
 
 [[package]]

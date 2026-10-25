@@ -220,17 +220,18 @@ impl ObjectRun {
             beside.retain(|(i, _)| !under.contains(i));
             let beside_lo = beside.iter().map(|b| b.1).min();
             let beside_hi = beside.iter().map(|b| b.1).max();
-            // (a slot more than one step above its base is a stack - a windscreen's own patches
+            // (a slot more than two steps above its base is a stack - a windscreen's own patches
             // lying on each other, a lens on a display on a panel - and its lift outgrows what
             // the step is for: it takes no more than the lowest step of the surfaces lying just
-            // off its plane, so that it cannot carry itself past one of them. A slot one step
-            // above its base keeps that step, which is what orders a print over its base; a slot
-            // on nothing takes the highest step beside it, so the step does not decide that pair
-            // either.)
+            // off its plane, so that it cannot carry itself past one of them, but never less than
+            // two. A slot one or two steps above its base keeps its step, which is what orders
+            // a print over its base and a second print over the first, even with a pane just in
+            // front; a slot on nothing takes the highest step beside it, so the step does not
+            // decide that pair either.)
             let level = if level == 0 {
                 beside_hi.unwrap_or(0)
-            } else if level > 1 {
-                level.min(beside_lo.unwrap_or(MAX_LEVEL))
+            } else if level > 2 {
+                level.min(beside_lo.unwrap_or(MAX_LEVEL).max(2))
             } else {
                 level
             };
@@ -329,8 +330,8 @@ mod tests {
 
     /// A step-by-step stack is where the lift outgrows its purpose: a slot three steps up, on a
     /// windscreen's own patches or a lens on a display on a panel, takes no more than the
-    /// lowest step of the surfaces lying just off its plane, so that its lift cannot carry it
-    /// past one of them (#2790). A slot one step above its base keeps that step - it is what
+    /// lowest step of the surfaces lying just off its plane (two at least), so that its lift
+    /// cannot carry it past one of them (#2790). A slot one or two steps above its base keeps its step - it is what
     /// orders it over the base (#1488, #1536) - and a slot on nothing takes the highest step
     /// beside it, so that the step does not decide that pair either. A print keeps the step that
     /// orders it over its base even with a pane 0.2 mm in front of it, since without the step it
@@ -355,7 +356,7 @@ mod tests {
         assert_eq!(levels_of(&[patch, base, print]), vec![0, 0, 1], "a patch of the base does not strip the step");
     }
 
-    /// A stack of steps is cut back to the surface lying just off it: a glass three steps up
+    /// A stack of steps is cut back to (at least two) the surface lying just off it: a glass three steps up
     /// because its own patches lie on each other must not lift itself past the fleet number
     /// 0.2 mm in front of it (#2790).
     #[test]
@@ -373,7 +374,7 @@ mod tests {
         for (k, m) in [deep(0.0, 1.0, false, 0), deep(0.0, 0.5, true, 0), deep(0.0, 0.3, false, 0), deep(0.0, 0.2, true, 0)].iter().enumerate() {
             run.levels([0; 3], k as u64 + 1, 0, Mat4::IDENTITY, &mesh_flats(m), 1);
         }
-        assert!(run.flats.iter().all(|f| f.1 <= 1), "the stack is cut back to the label's step");
+        assert!(run.flats.iter().all(|f| f.1 <= 2), "the stack is cut back to two steps");
         // (a millimetre is past what the step's lift reaches: nothing is cut back)
         let past = quad(-0.001, 0.2, 0, false);
         assert_eq!(levels_of(&[past, base, glass]), vec![0, 0, 1]);
@@ -398,6 +399,23 @@ mod tests {
         let label = quad(0.0002, 0.2, 0, false);
         assert_eq!(levels_of(&[base, glass, label]), vec![0, 1, 1]);
     }
+    /// Two prints over one base keep their order with a pane just in front: a second print
+    /// lies on the first, so it stays above it instead of being cut back to the pane's step
+    /// (behind the first print), whatever order the pane was added in.
+    #[test]
+    fn a_second_print_stays_over_the_first_beside_a_pane() {
+        let pane = quad(0.0002, 0.5, 0, false);
+        let base = quad(0.0, 1.0, 0, false);
+        let a = quad(0.0, 0.6, 0, true);
+        let b = quad(0.0, 0.3, 0, false);
+        assert_eq!(levels_of(&[pane.clone(), base.clone(), a.clone(), b.clone()]), vec![0, 0, 1, 2]);
+        // (on a base of two patches a fraction of a millimetre apart, as a curved panel's)
+        let patch = quad(0.0002, 0.8, 0, false);
+        assert_eq!(levels_of(&[patch, base, a, b]), vec![0, 0, 1, 2]);
+    }
+
+    /// Another object starts afresh: a new place, or a gap in the creation order, ends it;
+    /// meshes added outside a begun object take no step.
     #[test]
     fn another_object_starts_at_zero() {
         let mut run = ObjectRun::default();

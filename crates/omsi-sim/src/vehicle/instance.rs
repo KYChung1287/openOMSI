@@ -13,6 +13,16 @@ impl VehicleInstance {
             .unwrap_or_default()
     }
 
+    /// The license plate the scripts know as `ident` (empty for a vehicle without one).
+    pub fn ident(&self) -> String {
+        self.ty
+            .program
+            .str_var("ident")
+            .and_then(|i| self.state.str_vars.get(i as usize))
+            .cloned()
+            .unwrap_or_default()
+    }
+
     pub fn new(ty: Arc<VehicleType>, host: VehicleHost) -> VehicleInstance {
         let program = ty.program.clone();
         let mut state = State::new(&program);
@@ -95,6 +105,7 @@ impl VehicleInstance {
                 model_only_vars.push(key);
             }
         }
+
         // `Axle_Springfactor_*` (varlist_roadvehicle.txt): the engine's spring scale, which
         // air-suspension scripts overwrite with their bellows pressure; a steel-sprung bus
         // never writes it and must not ride on springs of zero
@@ -175,6 +186,9 @@ impl VehicleInstance {
                 ]
             })
             .collect();
+        let v_surface = (0..physics.wheels.len())
+            .map(|a| [v(&format!("Axle_SurfaceID_{a}_L")), v(&format!("Axle_SurfaceID_{a}_R"))])
+            .collect();
         let rest_sag: Vec<(f32, f32)> = {
             let rb = crate::rigid::RigidBody::from_definition(&ty.def, &ty.hub_heights(0));
             (0..physics.wheels.len())
@@ -206,12 +220,14 @@ impl VehicleInstance {
                 .collect();
             offs.iter().sum::<f32>() / offs.len().max(1) as f32
         };
-        VehicleInstance {
+        let trolley = TrolleyGear::for_type(&ty.def.trolley, std::ptr::addr_of!(host) as u64);
+        let mut instance = VehicleInstance {
             pending_destination: None,
             a_trans: OmsiFrames::default(),
             particles: ParticleSet::new(ty.model.particle_systems(), std::ptr::addr_of!(host) as u64 ^ 0x9e37_79b9),
             light_fade: Vec::new(),
             v_springfactor,
+            v_surface,
             rest_sag,
             ai_lift,
             contact: None,
@@ -273,6 +289,7 @@ impl VehicleInstance {
             km_started: false,
             cabin_air: None,
             ai_visuals: true,
+            ai_script_period: 0.0,
             ai_visuals_missed: 0.0,
             trailers_stepped: false,
             var_index: std::sync::Arc::new(var_index),
@@ -281,7 +298,19 @@ impl VehicleInstance {
             pax_vars: std::sync::OnceLock::new(),
             engine_ids: std::sync::OnceLock::new(),
             program_ids: std::sync::OnceLock::new(),
-        }
+            trolley,
+            rail_env: None,
+            rail_scripted: false,
+            rail_out: None,
+            rail_log: 0.0,
+            rail_brake_sys: None,
+            rail_chain: None,
+            rail_broken: false,
+            panto: None,
+        };
+        instance.declare_trolley_vars();
+        instance.init_pantograph();
+        instance
     }
 
     /// Restore a situation without running scripts against an incomplete host. Nothing is
@@ -406,12 +435,17 @@ impl VehicleInstance {
         }
     }
 
-    /// The scheme's `[setvar]`s set again, before every frame of the scripts: Omsi.exe
-    /// writes them each frame, not once, and scripts count on it. The Ikarbus cockpit
-    /// turns `v_font` to the Cyrillic font (7) while its switch is on and leaves it there
-    /// when the switch goes off; the scheme's `v_font 0` every frame is what brings the
+    /// The scheme's `[setvar]`s set again, before every frame of the scripts and after it:
+    /// Omsi.exe writes them each frame, not once, and scripts count on it. The Ikarbus
+    /// cockpit turns `v_font` to the Cyrillic font (7) while its switch is on and leaves it
+    /// there when the switch goes off; the scheme's `v_font 0` every frame is what brings the
     /// Latin font back, which the matrix then draws at the next terminus. Set once, the
     /// display stayed Cyrillic for good.
+    /// After the scripts too, so that what is drawn is the scheme's: the Kajosoft Jelcz's
+    /// `cockpit_frame` writes `v_drzwi` from its constant (0, standard doors) every frame,
+    /// and its repaints choose the glazed doors with `[setvar] v_drzwi 1` - which Omsi.exe
+    /// shows. Set before the scripts alone, the script's 0 was drawn: the JGSP Novi Sad
+    /// Vectus had the standard doors' white frames where the original has black (#3183).
     pub(crate) fn apply_scheme_vars_each_frame(&mut self) {
         let Some(Some(i)) = self.host.paint_scheme else { return };
         if let Some(s) = self.ty.paint_schemes.get(i) {

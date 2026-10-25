@@ -494,7 +494,7 @@ impl Navigator {
             Some(g) => g.key != key || (g.centre - centre).length() > g.radius * 0.35 || g.mpp / mpp > 1.7 || mpp / g.mpp > 1.7,
         };
         if stale && arrived.is_none() {
-            let look = GroundLook { surfaces: mpp < 0.7, trees: mpp < 0.7, dashes: mpp < 3.5 };
+            let look = GroundLook { surfaces: mpp < 0.7, trees: mpp < 0.7, dashes: mpp < 3.5, tol: 0.0 };
             let parts = self.ground_parts(net, band.map(|b| b.0));
             let pal2 = *pal;
             let houses = mpp < 6.0;
@@ -504,7 +504,7 @@ impl Navigator {
                 let b = job();
                 let [verts, houses @ ..] = b.counts.map(|n| n as u32);
                 self.city.ground = Some(CityGround { key, anchor: b.anchor, centre, radius, mpp, verts, houses });
-                return Some(b);
+                return Some(b.made_on(device));
             }
             let device = device.clone();
             self.city_job = Some(super::build::Job::start(CityJob { key, centre, radius, mpp }, move || job().made_on(&device)));
@@ -725,7 +725,7 @@ impl Navigator {
         let icon_verts = self.city_icons(&on_screen, win, s);
         // --- the cards: the trip top left, the buttons top right, the scale bottom left
         let pad = 14.0 * s;
-        let wd = words(f.language);
+        let wd = &WORDS;
         let head = Rect::new(pad, pad, (w * 0.5).min(520.0 * s), 58.0 * s);
         ui.shadow(head, 14.0 * s, 10.0 * s, Color::rgba(0, 0, 0, 0.14));
         ui.rounded(head, 14.0 * s, pal.card);
